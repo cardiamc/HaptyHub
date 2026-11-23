@@ -40,9 +40,9 @@ class GraphTemplate(BaseTemplate):
 
     def get_phase_1(self) -> str:
         type = "directed" if self.is_directed else "undirected"
-        subject = f" during a {self.subject} lesson" if self.subject else ""
+        subject = f", used during a {self.subject} lesson" if self.subject else ""
         base_prompt = self.get_from_file(os.path.join(self.__prompt_path, "phase1_json.txt"))
-        added_prompt = f"The user says this is a {type} graph used{subject}."
+        added_prompt = f"The user says this is {'an' if type == 'undirected' else 'a'} {type} graph{subject}."
         # 0 = valore non indicato dall'utente nella UI
         if self.nodes:
             added_prompt += f" It should have {self.nodes} nodes."
@@ -79,7 +79,10 @@ class FlowChartTemplate(BaseTemplate):
         edge_count = self.edges
         subject = self.subject if self.subject else ""
         base_prompt = self.get_from_file(os.path.join(self.__prompt_path, "phase1.txt"))
-        added_prompt = (f"I am attaching a Flow Chart graph used during a {subject} lesson. The Flow Chart Graph consists of {node_count} nodes and {edge_count} edges.")
+        added_prompt = "I am attaching a Flow Chart graph" + (f" used during a {subject} lesson." if subject else ".")
+        # 0 = valore non indicato: non lo comunichiamo all'AI
+        if node_count and edge_count:
+            added_prompt += f" The Flow Chart Graph consists of {node_count} nodes and {edge_count} edges."
         self.__prompt1 = base_prompt + "\n\n" + added_prompt
         return self.__prompt1
     

@@ -68,7 +68,7 @@ class LandingWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Modellatore di Bassorilievi Tattici - HaptyHub")
+        self.setWindowTitle("Modellatore di Bassorilievi Tattili - HaptyHub")
         self.resize(1000, 700) # Una dimensione iniziale decente
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
 
@@ -223,12 +223,15 @@ class LandingWindow(QMainWindow):
         #Direct Graph come default (Indice 1)
         self.stacked_widget.setCurrentIndex(1)
         
-        self.right_col_layout.addWidget(self.stacked_widget, stretch=1)
+        # I pannelli non hanno più parametri da compilare: il widget resta solo per
+        # sapere quale template è selezionato (menu "Template"), ma non occupa spazio
+        self.stacked_widget.setVisible(False)
+        self.right_col_layout.addWidget(self.stacked_widget)
 
-        # 2. IL VISUALIZZATORE 3D (al centro)
+        # 2. IL VISUALIZZATORE 3D
         self.viewer_3d = STLViewerWidget()
         self.viewer_3d.setMinimumHeight(300) # Dai un'altezza minima per non schiacciarlo
-        self.right_col_layout.addWidget(self.viewer_3d)
+        self.right_col_layout.addWidget(self.viewer_3d, stretch=1)
 
         # --- Console di output/log in sola lettura ---
         self.console_output = QTextEdit()
