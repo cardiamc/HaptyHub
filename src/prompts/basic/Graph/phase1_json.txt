@@ -1,0 +1,33 @@
+You are given the image of a graph (nodes connected by edges) used in a lesson. Extract its structure so that a program can build a tactile 3D model of it for visually impaired students.
+
+Reply with ONLY one JSON object, with no text before or after it, in exactly this format:
+
+{
+  "directed": true,
+  "nodes": [
+    {"id": "A", "x": 12, "y": 80, "price": null}
+  ],
+  "edges": [
+    {"from": "A", "to": "B", "weight": null}
+  ]
+}
+
+FIELDS
+- "directed": true if the edges have arrowheads, false otherwise.
+- "nodes": one entry per node.
+  - "id": the label written in or next to the node, exactly as shown (e.g. "A", "s", "1", "v3"). If a node has no label, use "N1", "N2", ... ordered left to right, then top to bottom.
+  - "x", "y": the position of the node CENTER in the image, on a 0-100 grid:
+    - x = 0 at the left edge of the image, x = 100 at the right edge;
+    - y = 0 at the BOTTOM edge of the image, y = 100 at the TOP edge.
+    Measure positions from the image; do not idealize, align or symmetrize them. Integers are enough.
+  - "price": a value written inside or next to the node that belongs to the node itself (cost, distance, potential, e.g. "5", "0", "∞"), as a string. null if there is none.
+- "edges": one entry per edge, listed once.
+  - Directed graph: "from" is the tail, "to" is the node the arrowhead points to. If two opposite arrows connect the same pair of nodes, list both edges.
+  - Undirected graph: list each edge once; the order of "from" and "to" does not matter.
+  - "weight": the value written next to the edge (weight, capacity, cost), as a string exactly as shown (e.g. "3", "-2", "4/7"). null if there is none.
+  - Report a self-loop only if it is clearly drawn.
+
+RULES
+- Every "from" and "to" must be an existing node "id".
+- Report every visible node price and edge weight, including symbolic ones like "∞". Do not invent values that are not in the image.
+- Before answering, check that the number of nodes and edges matches the image.

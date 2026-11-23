@@ -78,9 +78,25 @@ EOF
 chmod +x "$DESKTOP_FILE"
 
 # Creazione file eseguibile per terminale
-cat <<EOF > "HaptyHub.sh"
+cat <<'EOF' > "HaptyHub.sh"
 #!/bin/bash
+cd "$(dirname "$0")"
 source venv/bin/activate
+
+# WSL (WSLg): forza X11 + GLX, altrimenti PyOpenGL cerca un contesto EGL
+# inesistente e le viste 3D restano nere.
+if grep -qi microsoft /proc/version 2>/dev/null; then
+    export QT_QPA_PLATFORM=xcb
+    export PYOPENGL_PLATFORM=glx
+fi
+
+# Python di conda porta una propria libffi incompatibile con i driver Mesa
+# di sistema: precarichiamo quella di sistema se il venv deriva da conda.
+if grep -qiE "conda|anaconda" venv/pyvenv.cfg 2>/dev/null; then
+    SYS_FFI=$(ldconfig -p 2>/dev/null | awk '/libffi\.so\.[0-9]+ .*x86-64/{print $NF; exit}')
+    [ -n "$SYS_FFI" ] && export LD_PRELOAD="$SYS_FFI${LD_PRELOAD:+:$LD_PRELOAD}"
+fi
+
 python main.py
 deactivate
 EOF

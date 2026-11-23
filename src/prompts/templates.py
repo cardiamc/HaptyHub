@@ -22,33 +22,36 @@ class BaseTemplate(ABC):
 
 
 class GraphTemplate(BaseTemplate):
+    """
+    Classe base per i grafi (Diretti e Indiretti) che condividono gli stessi parametri.
 
-    """Classe base per i grafi (Diretti e Indiretti) che condividono gli stessi parametri."""
+    Pipeline deterministica: l'AI estrae solo la struttura del grafo in JSON (fase 1),
+    il codice OpenSCAD è generato da src/utils/graph_to_scad.py. Niente fase 2.
+    """
+    # Indica alla UI che il risultato della fase 1 è un JSON da convertire in .scad
+    deterministic = True
+
     def __init__(self, nodes: int, edges: int, subject: str, is_directed: bool):
         self.nodes = nodes
         self.edges = edges
         self.subject = subject
         self.is_directed = is_directed
-        self.__prompt_path = os.path.join(config.PROMPT_DIR, "basic", "DirectGraph") if is_directed else os.path.join(config.PROMPT_DIR,"basic", "UndirectGraph")
-
-        self.__prompt1 = ""
-        self.__prompt2 = ""
-        
+        self.__prompt_path = os.path.join(config.PROMPT_DIR, "basic", "Graph")
 
     def get_phase_1(self) -> str:
         type = "directed" if self.is_directed else "undirected"
-        node_count = self.nodes
-        edge_count = self.edges
-        subject = self.subject if self.subject else ""
-        base_prompt = self.get_from_file(os.path.join(self.__prompt_path, "phase1.txt"))
-        added_prompt = (f"I am attaching a {type} graph used during a {subject} lesson. The graph consists of {node_count} nodes and {edge_count} edges.")
-        self.__prompt1 = base_prompt + "\n\n" + added_prompt
-        return self.__prompt1
+        subject = f" during a {self.subject} lesson" if self.subject else ""
+        base_prompt = self.get_from_file(os.path.join(self.__prompt_path, "phase1_json.txt"))
+        added_prompt = f"The user says this is a {type} graph used{subject}."
+        # 0 = valore non indicato dall'utente nella UI
+        if self.nodes:
+            added_prompt += f" It should have {self.nodes} nodes."
+        if self.edges:
+            added_prompt += f" It should have {self.edges} edges."
+        return base_prompt + "\n\n" + added_prompt
 
-
-    def get_phase_2(self) -> str:
-        self.__prompt2 = self.get_from_file(os.path.join(self.__prompt_path, "phase2.txt"))
-        return self.__prompt1+"\n\n"+self.__prompt2
+    def get_phase_2(self) -> None:
+        return None
 
 # --- Le 4 Implementazioni Specifiche ---
 

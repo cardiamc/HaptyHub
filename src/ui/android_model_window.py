@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtCore import Qt, pyqtSignal
 
+from src.utils.thread_utils import release_thread
 from src.ui.panels import ELK_FlowChartPanel, ELK_GraphPanel
 
 # Importa la configurazione e gli helper
@@ -521,28 +522,20 @@ class AndroidModelWindow(QMainWindow):
         self.console_output.append(f"\n>> Modalità Debug: {stato}")
 
     def _cleanup_worker(self):
-        if hasattr(self, 'worker') and self.worker is not None:
-            try:
-                self.worker.quit()
-                self.worker.deleteLater()
-                self.worker = None
-            except Exception as e:
-                pass
-                
-        # Pulizia STLCompilerWorker
-        if hasattr(self, 'STLcompiler_worker') and self.STLcompiler_worker is not None:
-            try:
-                self.STLcompiler_worker.quit()
-                self.STLcompiler_worker.deleteLater()
-                self.STLcompiler_worker = None
-            except Exception as e:
-                pass
+        """Rilascia i worker in modo sicuro, anche se ancora in esecuzione."""
+        for attr in ("worker", "STLcompiler_worker"):
+            release_thread(getattr(self, attr, None))
+            setattr(self, attr, None)
 
     def closeEvent(self, event):
         print("Chiusura finestra: avvio procedura di scaricamento GPU...")
         # 1. Chiama il cleanup del visualizzatore
         if hasattr(self, 'viewer_3d'):
             self.viewer_3d.cleanup()
+
+        # Rilascia i thread di generazione (Gemini / OpenSCAD) senza farli
+        # distruggere mentre sono ancora in esecuzione
+        self._cleanup_worker()
         
         # 2. Imposta l'attributo per la distruzione immediata (se non lo hai già nell'init)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)

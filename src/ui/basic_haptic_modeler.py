@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtCore import Qt, pyqtSignal
 
+from src.utils.thread_utils import release_thread
 from src.ui.panels import GraphFormPanel, FlowChartPanel, SetTheoryPanel
 
 from src.utils.stl_viewer import STLViewerWidget
@@ -333,8 +334,9 @@ class LandingWindow(QMainWindow):
         if not image_path:
             self.console_output.append(">> ERRORE: Nessuna immagine selezionata. Scegli un file prima di inviare.")
             return
-        if not config.GEMINI_API_KEY and not config.DEBUG_MODE:
-            self.console_output.append(">> ERRORE: API Key di Gemini non configurata. Inseriscila nelle Opzioni.")
+        from src.utils.gemini_worker import available_providers
+        if not available_providers() and not config.DEBUG_MODE:
+            self.console_output.append(">> ERRORE: nessuna API Key configurata (Gemini o Claude). Inseriscila nelle Opzioni o nel file .env.")
             return
 
         self.console_output.clear()
@@ -345,6 +347,9 @@ class LandingWindow(QMainWindow):
         # di restituirci l'oggetto Prompt con tutti i dati già compilati
         active_panel = self.stacked_widget.currentWidget()
         prompt_obj = active_panel.get_prompt_object()
+        # Servono a fine elaborazione per la generazione deterministica del .scad
+        self._active_prompt = prompt_obj
+        self._active_image = image_path
 
         # Creiamo il worker e lo colleghiamo ai metodi della UI
         self.worker = GeminiWorker(image_path, prompt_obj.get_phase_1(), prompt_obj.get_phase_2())
@@ -434,10 +439,45 @@ class LandingWindow(QMainWindow):
         # Usiamo append() invece di setPlainText() per mantenere lo storico dei messaggi
         self.console_output.append(f"> {message}")
 
+    def _build_scad_from_json(self, raw_json):
+        """Pipeline deterministica: JSON del grafo estratto dall'AI -> file .scad."""
+        import time
+        from PIL import Image
+        from src.utils.graph_to_scad import parse_graph_json, generate_scad_from_graph
+
+        data = parse_graph_json(raw_json)
+        with Image.open(self._active_image) as img:
+            aspect = img.width / img.height
+        prompt = self._active_prompt
+        scad_code = generate_scad_from_graph(data, image_aspect=aspect,
+                                             directed=getattr(prompt, "is_directed", None))
+        self.console_output.append(
+            f"> Grafo letto: {len(data['nodes'])} nodi, {len(data['edges'])} archi. "
+            "Generazione del modello 3D...")
+
+        filepath = os.path.join(config.OUTPUT_DIR, f"modello_{int(time.time())}.scad")
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(scad_code)
+        # Salviamo anche il JSON: utile per controllare cosa ha letto l'AI
+        with open(filepath[:-5] + ".json", "w", encoding="utf-8") as f:
+            import json
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return filepath
+
     def handle_generation_success(self, filepath):
         """Chiamato quando il file .scad è stato creato con successo."""
         self.send_btn.setEnabled(True)
-        
+
+        # Template deterministici: il worker restituisce il JSON del grafo, non un file
+        if getattr(getattr(self, "_active_prompt", None), "deterministic", False):
+            from src.utils.graph_to_scad import GraphDataError
+            try:
+                filepath = self._build_scad_from_json(filepath)
+            except GraphDataError as e:
+                self.console_output.append(f"\n>> ERRORE: l'AI non ha restituito un grafo valido.\n{e}")
+                self._cleanup_worker()
+                return
+
         success_msg = (
             "\n\n"+
             ">> ELABORAZIONE COMPLETATA!\n\t"
@@ -446,9 +486,20 @@ class LandingWindow(QMainWindow):
         self.console_output.append(success_msg)
         # Compilazione in stl
         import subprocess
-        cmd = ["openscad", "-o", os.path.join(config.OUTPUT_DIR, "basic_haptic_model.stl"), filepath]
-        subprocess.run(cmd, check=True)
-        self.viewer_3d.load_stl(os.path.join(config.OUTPUT_DIR, "basic_haptic_model.stl"))
+        stl_path = os.path.join(config.OUTPUT_DIR, "basic_haptic_model.stl")
+        cmd = [config.OPENSCAD_CMD, "-o", stl_path, filepath]
+        self.console_output.append("> Compilazione STL con OpenSCAD in corso...")
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            self.console_output.append(f">> File STL generato in:\n{stl_path}")
+            self.viewer_3d.load_stl(stl_path)
+        except FileNotFoundError:
+            self.console_output.append(
+                ">> ERRORE: OpenSCAD non trovato. Installalo da https://openscad.org/downloads.html "
+                "oppure aggiungilo al PATH.")
+        except subprocess.CalledProcessError as e:
+            dettagli = (e.stderr or "").strip().splitlines()[-5:]
+            self.console_output.append(">> ERRORE durante la compilazione OpenSCAD:\n" + "\n".join(dettagli))
 
         self._cleanup_worker()
 
@@ -473,16 +524,20 @@ class LandingWindow(QMainWindow):
         self.console_output.append(f"\n>> Modalità Debug: {stato}")
 
     def _cleanup_worker(self):
-        """Forza la distruzione del thread sganciandolo dalla memoria."""
-        if hasattr(self, 'worker') and self.worker is not None:
-            self.worker.deleteLater()
-            self.worker = None  #taglia il riferimento e forza il __del__
+        """Rilascia i worker in modo sicuro, anche se ancora in esecuzione."""
+        for attr in ("worker", "STLcompiler_worker"):
+            release_thread(getattr(self, attr, None))
+            setattr(self, attr, None)
 
     def closeEvent(self, event):
         print("Chiusura finestra: avvio procedura di scaricamento GPU...")
         # 1. Chiama il cleanup del visualizzatore
         if hasattr(self, 'viewer_3d'):
             self.viewer_3d.cleanup()
+
+        # Rilascia i thread di generazione (Gemini / OpenSCAD) senza farli
+        # distruggere mentre sono ancora in esecuzione
+        self._cleanup_worker()
         
         # 2. Imposta l'attributo per la distruzione immediata (se non lo hai già nell'init)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)

@@ -44,7 +44,7 @@ class STLCompilerWorker(QThread):
             # 4. Compilazione pesantissima in STL
             self.progress.emit("Compilazione in corso (OpenSCAD).\nQuesta operazione è molto pesante, attendere prego...")
             stl_output = os.path.join(config.OUTPUT_DIR, f"{self.output_prefix}.stl")
-            cmd_scad = ["openscad", "-o", stl_output, scad_output]
+            cmd_scad = [config.OPENSCAD_CMD, "-o", stl_output, scad_output]
             subprocess.run(cmd_scad, check=True)
 
             # Ha finito con successo!
